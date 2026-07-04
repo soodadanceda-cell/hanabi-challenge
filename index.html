@@ -60,6 +60,20 @@
     opacity: 0.9;
     animation: pulse 1.4s ease-in-out infinite;
   }
+  #nickname {
+    pointer-events: auto;
+    margin-top: 6px;
+    width: 200px;
+    padding: 8px 14px;
+    font-size: 15px;
+    text-align: center;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 999px;
+    outline: none;
+  }
+  #nickname::placeholder { color: rgba(255, 255, 255, 0.4); }
   @keyframes pulse { 0%,100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.12); opacity: 0.5; } }
   #result .caption { font-size: 16px; opacity: 0.7; letter-spacing: 0.2em; }
   #result .score { font-size: 72px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
@@ -68,7 +82,7 @@
   #ranking {
     pointer-events: auto;
     margin-top: 8px;
-    width: 240px;
+    width: 280px;
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 12px;
@@ -78,13 +92,21 @@
   #ranking ol { list-style: none; margin: 0; padding: 0; }
   #ranking li {
     display: flex;
-    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
     font-size: 15px;
     font-variant-numeric: tabular-nums;
     padding: 3px 0;
     opacity: 0.85;
   }
-  #ranking li .pos { opacity: 0.5; width: 28px; text-align: left; }
+  #ranking li .pos { opacity: 0.5; width: 28px; text-align: left; flex-shrink: 0; }
+  #ranking li .name {
+    flex: 1;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   #ranking li.new { color: #ffd166; font-weight: 700; opacity: 1; }
   #ranking li.status { justify-content: center; opacity: 0.6; }
   #retry {
@@ -113,6 +135,7 @@
 <div class="overlay" id="start">
   <div class="title">15秒チャレンジ</div>
   <div class="sub">15秒間でどれだけクリックできる？<br>1クリックごとに花火が打ち上がる！</div>
+  <input type="text" id="nickname" placeholder="ニックネーム(省略可)" maxlength="12">
   <div class="go">クリックでスタート</div>
 </div>
 
@@ -139,10 +162,15 @@
   const rankEl = document.getElementById('rank');
   const retryBtn = document.getElementById('retry');
   const rankingListEl = document.getElementById('rankingList');
+  const nicknameInput = document.getElementById('nickname');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const GAME_SEC = 15;
   const API_BASE = 'https://hanabi-ranking-api.netlify.app';
+  const NICK_KEY = 'hanabi15_nickname';
   let W, H;
+
+  nicknameInput.value = localStorage.getItem(NICK_KEY) || '';
+  nicknameInput.addEventListener('input', () => localStorage.setItem(NICK_KEY, nicknameInput.value));
 
   function resize() {
     W = window.innerWidth;
@@ -232,10 +260,11 @@
   }
 
   async function submitScore(score) {
+    const name = nicknameInput.value.trim().slice(0, 12);
     const res = await fetch(API_BASE + '/api/score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ score }),
+      body: JSON.stringify({ score, name }),
     });
     if (!res.ok) throw new Error('submit failed');
     const data = await res.json();
@@ -258,9 +287,13 @@
       const pos = document.createElement('span');
       pos.className = 'pos';
       pos.textContent = (i + 1) + '位';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = entry.name || '名無し';
       const val = document.createElement('span');
       val.textContent = entry.score + '発';
       li.appendChild(pos);
+      li.appendChild(name);
       li.appendChild(val);
       rankingListEl.appendChild(li);
     });
