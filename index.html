@@ -101,7 +101,7 @@
   #result .score { font-size: 72px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
   #result .score small { font-size: 26px; font-weight: 400; }
   #result .rank { font-size: 24px; font-weight: 700; color: #ffd166; }
-  #ranking {
+  .ranking-box {
     pointer-events: auto;
     margin-top: 8px;
     width: 280px;
@@ -110,9 +110,9 @@
     border-radius: 12px;
     padding: 10px 16px;
   }
-  #ranking .heading { font-size: 12px; opacity: 0.6; letter-spacing: 0.2em; margin-bottom: 6px; }
-  #ranking ol { list-style: none; margin: 0; padding: 0; }
-  #ranking li {
+  .ranking-box .heading { font-size: 12px; opacity: 0.6; letter-spacing: 0.2em; margin-bottom: 6px; }
+  .ranking-box ol { list-style: none; margin: 0; padding: 0; }
+  .ranking-box li {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -121,16 +121,28 @@
     padding: 3px 0;
     opacity: 0.85;
   }
-  #ranking li .pos { opacity: 0.5; width: 28px; text-align: left; flex-shrink: 0; }
-  #ranking li .name {
+  .ranking-box li .pos { opacity: 0.5; width: 28px; text-align: left; flex-shrink: 0; }
+  .ranking-box li .name {
     flex: 1;
     text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  #ranking li.new { color: #ffd166; font-weight: 700; opacity: 1; }
-  #ranking li.status { justify-content: center; opacity: 0.6; }
+  .ranking-box li.new { color: #ffd166; font-weight: 700; opacity: 1; }
+  .ranking-box li.status { justify-content: center; opacity: 0.6; }
+  #viewRankingBtn {
+    pointer-events: auto;
+    margin-top: 4px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.7);
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 999px;
+    padding: 6px 18px;
+    cursor: pointer;
+  }
+  #viewRankingBtn:active { transform: scale(0.95); }
   #retry {
     margin-top: 18px;
     pointer-events: auto;
@@ -158,6 +170,11 @@
   <div class="title">15秒チャレンジ</div>
   <div class="sub">15秒間でどれだけクリックできる？<br>1クリックごとに花火が打ち上がる！</div>
   <div class="go">クリックでスタート</div>
+  <button id="viewRankingBtn" type="button">ランキングを見る</button>
+  <div id="startRanking" class="ranking-box hide">
+    <div class="heading">みんなのベスト10</div>
+    <ol id="startRankingList"></ol>
+  </div>
 </div>
 
 <div class="overlay hidden" id="result">
@@ -168,7 +185,7 @@
     <input type="text" id="nickname" placeholder="ニックネーム(省略可)" maxlength="12">
     <button id="registerBtn">ランキングに登録</button>
   </div>
-  <div id="ranking" class="hide">
+  <div id="ranking" class="ranking-box hide">
     <div class="heading">みんなのベスト10</div>
     <ol id="rankingList"></ol>
   </div>
@@ -191,6 +208,9 @@
   const registerBoxEl = document.getElementById('registerBox');
   const registerBtn = document.getElementById('registerBtn');
   const nicknameInput = document.getElementById('nickname');
+  const viewRankingBtn = document.getElementById('viewRankingBtn');
+  const startRankingEl = document.getElementById('startRanking');
+  const startRankingListEl = document.getElementById('startRankingList');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const GAME_SEC = 15;
   const API_BASE = 'https://hanabi-ranking-api.netlify.app';
@@ -299,16 +319,23 @@
     return data.ranking;
   }
 
-  function renderRankingStatus(text) {
-    rankingListEl.innerHTML = '';
+  async function fetchRanking() {
+    const res = await fetch(API_BASE + '/api/scores');
+    if (!res.ok) throw new Error('fetch failed');
+    const data = await res.json();
+    return data.ranking;
+  }
+
+  function renderRankingStatus(listEl, text) {
+    listEl.innerHTML = '';
     const li = document.createElement('li');
     li.className = 'status';
     li.textContent = text;
-    rankingListEl.appendChild(li);
+    listEl.appendChild(li);
   }
 
-  function renderRanking(list, currentScore) {
-    rankingListEl.innerHTML = '';
+  function renderRanking(listEl, list, currentScore) {
+    listEl.innerHTML = '';
     list.forEach((entry, i) => {
       const li = document.createElement('li');
       if (entry.score === currentScore) li.className = 'new';
@@ -323,23 +350,44 @@
       li.appendChild(pos);
       li.appendChild(name);
       li.appendChild(val);
-      rankingListEl.appendChild(li);
+      listEl.appendChild(li);
     });
   }
+
+  async function handleViewRanking() {
+    if (!startRankingEl.classList.contains('hide')) {
+      startRankingEl.classList.add('hide');
+      return;
+    }
+    startRankingEl.classList.remove('hide');
+    renderRankingStatus(startRankingListEl, '読み込み中…');
+    try {
+      const ranking = await fetchRanking();
+      renderRanking(startRankingListEl, ranking, null);
+    } catch (e) {
+      renderRankingStatus(startRankingListEl, 'ランキングを取得できませんでした');
+    }
+  }
+  viewRankingBtn.addEventListener('click', (e) => { e.stopPropagation(); handleViewRanking(); });
 
   async function handleRegister() {
     registerBtn.disabled = true;
     registerBtn.textContent = '送信中…';
     try {
       const ranking = await submitScore(count);
-      renderRanking(ranking, count);
+      renderRanking(rankingListEl, ranking, count);
       registerBoxEl.classList.add('hide');
       rankingEl.classList.remove('hide');
     } catch (e) {
       registerBtn.disabled = false;
       registerBtn.textContent = 'ランキングに登録';
-      renderRankingStatus('登録できませんでした。もう一度お試しください');
       rankingEl.classList.remove('hide');
+      try {
+        const ranking = await fetchRanking();
+        renderRanking(rankingListEl, ranking, count);
+      } catch (e2) {
+        renderRankingStatus(rankingListEl, 'ランキングを取得できませんでした');
+      }
     }
   }
   registerBtn.addEventListener('click', (e) => { e.stopPropagation(); handleRegister(); });
