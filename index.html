@@ -52,6 +52,7 @@
     transition: opacity 0.4s;
   }
   .overlay.hidden { opacity: 0; visibility: hidden; }
+  .hide { display: none !important; }
   #start .title { font-size: 30px; font-weight: 700; letter-spacing: 0.1em; }
   #start .sub { font-size: 16px; opacity: 0.7; line-height: 1.8; }
   #start .go {
@@ -74,6 +75,27 @@
     outline: none;
   }
   #nickname::placeholder { color: rgba(255, 255, 255, 0.4); }
+  #registerBox {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  #registerBtn {
+    pointer-events: auto;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(255, 209, 102, 0.15);
+    border: 1px solid rgba(255, 209, 102, 0.6);
+    border-radius: 999px;
+    padding: 8px 20px;
+    cursor: pointer;
+  }
+  #registerBtn:active { transform: scale(0.95); }
+  #registerBtn:disabled { opacity: 0.5; cursor: default; }
   @keyframes pulse { 0%,100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.12); opacity: 0.5; } }
   #result .caption { font-size: 16px; opacity: 0.7; letter-spacing: 0.2em; }
   #result .score { font-size: 72px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
@@ -135,7 +157,6 @@
 <div class="overlay" id="start">
   <div class="title">15秒チャレンジ</div>
   <div class="sub">15秒間でどれだけクリックできる？<br>1クリックごとに花火が打ち上がる！</div>
-  <input type="text" id="nickname" placeholder="ニックネーム(省略可)" maxlength="12">
   <div class="go">クリックでスタート</div>
 </div>
 
@@ -143,7 +164,11 @@
   <div class="caption">RESULT</div>
   <div class="score"><span id="final">0</span><small> 発</small></div>
   <div class="rank" id="rank"></div>
-  <div id="ranking">
+  <div id="registerBox">
+    <input type="text" id="nickname" placeholder="ニックネーム(省略可)" maxlength="12">
+    <button id="registerBtn">ランキングに登録</button>
+  </div>
+  <div id="ranking" class="hide">
     <div class="heading">みんなのベスト10</div>
     <ol id="rankingList"></ol>
   </div>
@@ -162,6 +187,9 @@
   const rankEl = document.getElementById('rank');
   const retryBtn = document.getElementById('retry');
   const rankingListEl = document.getElementById('rankingList');
+  const rankingEl = document.getElementById('ranking');
+  const registerBoxEl = document.getElementById('registerBox');
+  const registerBtn = document.getElementById('registerBtn');
   const nicknameInput = document.getElementById('nickname');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const GAME_SEC = 15;
@@ -299,23 +327,42 @@
     });
   }
 
-  async function endGame() {
+  async function handleRegister() {
+    registerBtn.disabled = true;
+    registerBtn.textContent = '送信中…';
+    try {
+      const ranking = await submitScore(count);
+      renderRanking(ranking, count);
+      registerBoxEl.classList.add('hide');
+      rankingEl.classList.remove('hide');
+    } catch (e) {
+      registerBtn.disabled = false;
+      registerBtn.textContent = 'ランキングに登録';
+      renderRankingStatus('登録できませんでした。もう一度お試しください');
+      rankingEl.classList.remove('hide');
+    }
+  }
+  registerBtn.addEventListener('click', (e) => { e.stopPropagation(); handleRegister(); });
+  nicknameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleRegister(); }
+  });
+
+  function endGame() {
     state = 'done';
     hudTime.textContent = '0.0';
     finalEl.textContent = count;
     rankEl.textContent = rankOf(count);
+    registerBoxEl.classList.remove('hide');
+    registerBtn.disabled = false;
+    registerBtn.textContent = 'ランキングに登録';
+    rankingEl.classList.add('hide');
+    rankingListEl.innerHTML = '';
     resultEl.classList.remove('hidden');
-    renderRankingStatus('読み込み中…');
     const finale = Math.min(14, Math.max(5, Math.floor(count / 8)));
     for (let i = 0; i < finale; i++) {
       setTimeout(() => launch(rand(W * 0.1, W * 0.9), rand(H * 0.12, H * 0.45)), i * 220);
     }
-    try {
-      const ranking = await submitScore(count);
-      renderRanking(ranking, count);
-    } catch (e) {
-      renderRankingStatus('ランキングを取得できませんでした');
-    }
+    nicknameInput.focus();
   }
 
   function reset() {
