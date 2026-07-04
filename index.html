@@ -65,6 +65,27 @@
   #result .score { font-size: 72px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
   #result .score small { font-size: 26px; font-weight: 400; }
   #result .rank { font-size: 24px; font-weight: 700; color: #ffd166; }
+  #ranking {
+    pointer-events: auto;
+    margin-top: 8px;
+    width: 240px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 12px;
+    padding: 10px 16px;
+  }
+  #ranking .heading { font-size: 12px; opacity: 0.6; letter-spacing: 0.2em; margin-bottom: 6px; }
+  #ranking ol { list-style: none; margin: 0; padding: 0; }
+  #ranking li {
+    display: flex;
+    justify-content: space-between;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    padding: 3px 0;
+    opacity: 0.85;
+  }
+  #ranking li .pos { opacity: 0.5; width: 28px; text-align: left; }
+  #ranking li.new { color: #ffd166; font-weight: 700; opacity: 1; }
   #retry {
     margin-top: 18px;
     pointer-events: auto;
@@ -98,6 +119,10 @@
   <div class="caption">RESULT</div>
   <div class="score"><span id="final">0</span><small> 発</small></div>
   <div class="rank" id="rank"></div>
+  <div id="ranking">
+    <div class="heading">この端末でのベスト10</div>
+    <ol id="rankingList"></ol>
+  </div>
   <button id="retry">もう一度</button>
 </div>
 
@@ -112,8 +137,11 @@
   const finalEl = document.getElementById('final');
   const rankEl = document.getElementById('rank');
   const retryBtn = document.getElementById('retry');
+  const rankingListEl = document.getElementById('rankingList');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const GAME_SEC = 15;
+  const RANKING_KEY = 'hanabi15_ranking';
+  const RANKING_MAX = 10;
   let W, H;
 
   function resize() {
@@ -203,11 +231,48 @@
     return 'まずは準備運動？';
   }
 
+  function loadRanking() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(RANKING_KEY));
+      return Array.isArray(raw) ? raw : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveScore(score) {
+    const list = loadRanking();
+    const entry = { score, date: new Date().toISOString() };
+    list.push(entry);
+    list.sort((a, b) => b.score - a.score);
+    list.length = Math.min(list.length, RANKING_MAX);
+    localStorage.setItem(RANKING_KEY, JSON.stringify(list));
+    return { list, entry };
+  }
+
+  function renderRanking(list, currentEntry) {
+    rankingListEl.innerHTML = '';
+    list.forEach((entry, i) => {
+      const li = document.createElement('li');
+      if (entry === currentEntry) li.className = 'new';
+      const pos = document.createElement('span');
+      pos.className = 'pos';
+      pos.textContent = (i + 1) + '位';
+      const val = document.createElement('span');
+      val.textContent = entry.score + '発';
+      li.appendChild(pos);
+      li.appendChild(val);
+      rankingListEl.appendChild(li);
+    });
+  }
+
   function endGame() {
     state = 'done';
     hudTime.textContent = '0.0';
     finalEl.textContent = count;
     rankEl.textContent = rankOf(count);
+    const { list, entry } = saveScore(count);
+    renderRanking(list, entry);
     resultEl.classList.remove('hidden');
     const finale = Math.min(14, Math.max(5, Math.floor(count / 8)));
     for (let i = 0; i < finale; i++) {
