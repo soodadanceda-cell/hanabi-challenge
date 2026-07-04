@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>花火ゲーム — 15秒チャレンジ</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #060614;
+    touch-action: manipulation;
+    font-family: -apple-system, "Hiragino Sans", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  #hud {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 28px;
+    color: #fff;
+    pointer-events: none;
+    text-shadow: 0 0 8px rgba(0,0,0,0.8);
+  }
+  #hud .box { text-align: center; }
+  #hud .label { font-size: 12px; opacity: 0.6; letter-spacing: 0.15em; }
+  #hud .value { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #hud .value.warn { color: #ff6b6b; }
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: #fff;
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+  .overlay.hidden { opacity: 0; visibility: hidden; }
+  #start .title { font-size: 30px; font-weight: 700; letter-spacing: 0.1em; }
+  #start .sub { font-size: 16px; opacity: 0.7; line-height: 1.8; }
+  #start .go {
+    margin-top: 10px;
+    font-size: 20px;
+    opacity: 0.9;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.12); opacity: 0.5; } }
+  #result .caption { font-size: 16px; opacity: 0.7; letter-spacing: 0.2em; }
+  #result .score { font-size: 72px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  #result .score small { font-size: 26px; font-weight: 400; }
+  #result .rank { font-size: 24px; font-weight: 700; color: #ffd166; }
+  #retry {
+    margin-top: 18px;
+    pointer-events: auto;
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 999px;
+    padding: 12px 44px;
+    cursor: pointer;
+  }
+  #retry:active { transform: scale(0.95); }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+
+<div id="hud">
+  <div class="box"><div class="label">TIME</div><div class="value" id="time">15.0</div></div>
+  <div class="box"><div class="label">SCORE</div><div class="value" id="score">0</div></div>
+</div>
+
+<div class="overlay" id="start">
+  <div class="title">15秒チャレンジ</div>
+  <div class="sub">15秒間でどれだけクリックできる？<br>1クリックごとに花火が打ち上がる！</div>
+  <div class="go">クリックでスタート</div>
+</div>
+
+<div class="overlay hidden" id="result">
+  <div class="caption">RESULT</div>
+  <div class="score"><span id="final">0</span><small> 発</small></div>
+  <div class="rank" id="rank"></div>
+  <button id="retry">もう一度</button>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('sky');
+  const ctx = canvas.getContext('2d');
+  const hudTime = document.getElementById('time');
+  const hudScore = document.getElementById('score');
+  const startEl = document.getElementById('start');
+  const resultEl = document.getElementById('result');
+  const finalEl = document.getElementById('final');
+  const rankEl = document.getElementById('rank');
+  const retryBtn = document.getElementById('retry');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const GAME_SEC = 15;
+  let W, H;
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const stars = [];
+  for (let i = 0; i < 120; i++) {
+    stars.push({ x: Math.random(), y: Math.random() * 0.75, r: Math.random() * 1.2 + 0.3, tw: Math.random() * Math.PI * 2 });
+  }
+
+  const PALETTES = [
+    [0, 20],      // 赤〜オレンジ
+    [40, 55],     // 金
+    [110, 140],   // 緑
+    [180, 210],   // 水色〜青
+    [270, 290],   // 紫
+    [300, 330],   // ピンク
+  ];
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pickHue = () => { const p = PALETTES[Math.floor(Math.random() * PALETTES.length)]; return rand(p[0], p[1]); };
+
+  const rockets = [];
+  const particles = [];
+
+  let state = 'ready';
+  let count = 0;
+  let startTime = 0;
+  let flash = 0;
+
+  function launch(tx, ty) {
+    const sx = tx + rand(-30, 30);
+    rockets.push({
+      x: sx, y: H + 10,
+      tx, ty: Math.min(ty, H - 60),
+      vx: (tx - sx) / 60,
+      vy: -rand(11, 14),
+      hue: pickHue(),
+    });
+  }
+
+  function burst(x, y, hue) {
+    const type = Math.random();
+    const hue2 = Math.random() < 0.35 ? pickHue() : hue;
+    if (type < 0.2) {
+      const n = 70, speed = rand(3.5, 5.5);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        particles.push(makeParticle(x, y, Math.cos(a) * speed, Math.sin(a) * speed, hue, rand(50, 70)));
+      }
+    } else if (type < 0.4) {
+      for (let i = 0; i < 90; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = rand(1, 4.5);
+        const p = makeParticle(x, y, Math.cos(a) * s, Math.sin(a) * s, rand(40, 55), rand(90, 140));
+        p.gravity = 0.045;
+        p.drag = 0.985;
+        particles.push(p);
+      }
+    } else {
+      const n = Math.floor(rand(80, 130));
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = Math.pow(Math.random(), 0.5) * rand(4.5, 6.5);
+        particles.push(makeParticle(x, y, Math.cos(a) * s, Math.sin(a) * s, i % 2 ? hue : hue2, rand(45, 75)));
+      }
+    }
+    flash = 0.22;
+  }
+
+  function makeParticle(x, y, vx, vy, hue, life) {
+    return { x, y, vx, vy, hue, life, maxLife: life, gravity: 0.06, drag: 0.975 };
+  }
+
+  function rankOf(n) {
+    if (n >= 150) return '人間卒業！？';
+    if (n >= 120) return '神の指！';
+    if (n >= 90) return '花火職人！';
+    if (n >= 60) return 'いい腕前！';
+    if (n >= 30) return 'のんびり見物';
+    return 'まずは準備運動？';
+  }
+
+  function endGame() {
+    state = 'done';
+    hudTime.textContent = '0.0';
+    finalEl.textContent = count;
+    rankEl.textContent = rankOf(count);
+    resultEl.classList.remove('hidden');
+    const finale = Math.min(14, Math.max(5, Math.floor(count / 8)));
+    for (let i = 0; i < finale; i++) {
+      setTimeout(() => launch(rand(W * 0.1, W * 0.9), rand(H * 0.12, H * 0.45)), i * 220);
+    }
+  }
+
+  function reset() {
+    state = 'ready';
+    count = 0;
+    hudTime.textContent = GAME_SEC.toFixed(1);
+    hudTime.classList.remove('warn');
+    hudScore.textContent = '0';
+    resultEl.classList.add('hidden');
+    startEl.classList.remove('hidden');
+  }
+  retryBtn.addEventListener('click', (e) => { e.stopPropagation(); reset(); });
+
+  function fire(e) {
+    if (state === 'done') return;
+    const pt = e.touches ? e.touches[0] : e;
+    const rect = canvas.getBoundingClientRect();
+    if (state === 'ready') {
+      state = 'playing';
+      startTime = performance.now();
+      startEl.classList.add('hidden');
+    }
+    count++;
+    hudScore.textContent = count;
+    launch(pt.clientX - rect.left, pt.clientY - rect.top);
+  }
+  canvas.addEventListener('mousedown', fire);
+  canvas.addEventListener('touchstart', (e) => { e.preventDefault(); fire(e); }, { passive: false });
+
+  function tick() {
+    if (state === 'playing') {
+      const remain = Math.max(0, GAME_SEC - (performance.now() - startTime) / 1000);
+      hudTime.textContent = remain.toFixed(1);
+      if (remain <= 5) hudTime.classList.add('warn');
+      if (remain <= 0) endGame();
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(6, 6, 20, 0.22)';
+    ctx.fillRect(0, 0, W, H);
+
+    if (flash > 0) {
+      ctx.fillStyle = 'rgba(255, 245, 220, ' + flash * 0.12 + ')';
+      ctx.fillRect(0, 0, W, H);
+      flash -= 0.03;
+    }
+
+    const t = Date.now() / 700;
+    ctx.fillStyle = '#fff';
+    for (const s of stars) {
+      ctx.globalAlpha = 0.25 + 0.35 * Math.abs(Math.sin(t + s.tw));
+      ctx.beginPath();
+      ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (let i = rockets.length - 1; i >= 0; i--) {
+      const r = rockets[i];
+      r.x += r.vx;
+      r.y += r.vy;
+      r.vy += 0.08;
+      particles.push({ x: r.x, y: r.y, vx: rand(-0.3, 0.3), vy: rand(0, 0.5), hue: r.hue, life: 18, maxLife: 18, gravity: 0.02, drag: 0.95 });
+      ctx.fillStyle = 'hsl(' + r.hue + ', 100%, 75%)';
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      if (r.vy >= -1 || r.y <= r.ty) {
+        burst(r.x, r.y, r.hue);
+        rockets.splice(i, 1);
+      }
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.vx *= p.drag;
+      p.vy = p.vy * p.drag + p.gravity;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life--;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      const ratio = p.life / p.maxLife;
+      const twinkle = ratio < 0.35 && Math.random() < 0.3 ? 0 : 1;
+      ctx.globalAlpha = ratio * twinkle;
+      ctx.fillStyle = 'hsl(' + p.hue + ', 100%, ' + (55 + ratio * 25) + '%)';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 1.6 + ratio, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+</script>
+</body>
+</html>
